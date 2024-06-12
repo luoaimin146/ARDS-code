@@ -1,0 +1,1 @@
+This study used MIMIC-IV and eICU 2.0 data to investigate the relationship between BMI and short-term mortality in ARDS.

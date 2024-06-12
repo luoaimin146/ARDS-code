@@ -1,0 +1,403 @@
+library(readxl)
+> ards <- read_excel("ards.xlsx")
+> View(ards)
+library(mice)
+is.na() 
+table(complete.cases(ards))
+install.packages("dplyr")
+library("dplyr")
+a <- select(ards,where(~!all(is.na(.))))
+countards <- ards%>%
+  select_if(~any(is.na(.)))%>%
+  summarise(across(.cols = everything(),list(
+    prop=~round(sum(is.na(.))/length(.),3))))
+prop=0.2
+ck=countards>prop
+colnames(countards)[ck]
+var=gsub(colnames(countards)[ck],pattern = "_prop",replacement = "");var
+b <- select(ards,-var)
+install.packages("xlsx")
+
+library(xlsx)  
+write.xlsx(b, Rdata, sheetName="ards1",
+           col.names=TRUE, row.names=TRUE, append=FALSE, showNA=TRUE) 
+
+
+install.packages("dplyr")
+library("dplyr")
+a <- select(ards,where(~!all(is.na(.))))
+countards <- ards%>%
+  select_if(~any(is.na(.)))%>%
+  summarise(across(.cols = everything(),list(
+    prop=~round(sum(is.na(.))/length(.),3))))
+prop=0.05
+ck=countards<prop
+colnames(countards)[ck]
+var=gsub(colnames(countards)[ck],pattern = "_prop",replacement = "");var
+d <- select(ards,var)
+d<-as.numeric(d)
+data <- b
+
+data <- round(data, 2)
+data2$glucose_mean<- gsub(200064.60, 136,data2$glucose_mean)
+data2$glucose_mean<- gsub(166766.00, 136,data2$glucose_mean)
+data2$glucose_mean<- gsub(142985.00, 136,data2$glucose_mean)
+data2$glucose_mean<- gsub(111181.33, 136,data2$glucose_mean)
+data2$minute_volume_mean<- gsub(303333333.00, 9.68,data2$minute_volume_mean)
+data2$tidal_volume_observed_mean<- gsub(39142857.00, 468.1,data2$tidal_volume_observed_mean)
+data2$tidal_volume_observed_mean<- gsub(83665.29, 468.1,data2$tidal_volume_observed_mean)
+
+summary(data2)
+
+一、
+replacena <- function(x,value){
+  for(i in 1:length(x)){
+    x[i] <- ifelse(is.na(x[i]),value,x[i])  
+  }
+   return(x)
+}
+mv <- sapply(data4,mean,na.rm=T)
+for(i in seq_along (data4)){
+  data4[,i]<-replacena(data4[,i],mv[i])
+}
+二、
+
+mean_values <- apply([], 2, mean, na.rm = TRUE)
+
+df[is.na(df)] <- mean_values[rep(seq_len(ncol(df)), each = nrow(df))] 
+install.packages("xlsx")
+library(readxl)
+write.csv(data2, "data2.csv")
+  
+
+install.packages("readxl")
+library(readxl)
+result111 <- read_excel("ards/result111.xlsx")
+data1 <- result111
+install.packages("psych")
+library(psych)
+describe(data1)
+install.packages('CBCgrps')
+library(CBCgrps)
+library(nortest)
+lillie.test(result111$heart_rate_mean)
+options(scipen = 100)
+options(digits = 3)
+
+lillie.test(result111$sbp_mean)
+lillie.test(result111$dbp_mean)
+lillie.test(result111$MAP)
+lillie.test(result111$sbp_mean)
+lillie.test(result111$dbp_mean)
+lillie.test(result111$MAP)
+lillie.test(result111$peep_mean)
+lillie.test(result111$fio2_mean)
+lillie.test(result111$respiratory_rate_set_mean)
+lillie.test(result111$tidal_volume_observed_mean)
+lillie.test(result111$urineoutput)
+#新增一列BMI的值
+data1$BMIt <- data1$BMI
+#利用BMI将数据分为四组
+data1$BMI1 <- cut(data1$BMI,
+                  breaks = c(0, 18.5, 25, 30, Inf),
+                  labels = c("underweight", "normalweight", "overweight", "obesity"))
+data1$BMI1 <- split(data1$BMI, data1$BMI1)
+underweight_df <- data1$BMI1[["underweight"]]
+normalweight_df <- data1$BMI1[["normalweight"]]
+overweight_df <- data1$BMI1[["overweight"]]
+obesity_df <- data1$BMI1[["obesity"]]
+#删去BMIt这一列
+library(dplyr)
+data1 <- select(data1,-BMIt)
+data2 <- read.csv("data5.csv", stringsAsFactors=FALSE)
+
+#计算百分位数和例数
+
+# 计算每列的例数
+col_counts <- apply(df, 2, table)
+print(col_counts)
+# 计算基线信息
+# 将 BMI 分组
+data$BMI_group <- cut(data$BMI, breaks = c(0, 18.5, 25, 30, Inf), labels = c("Underweight", "Normal", "Overweight", "Obese"))
+# 按照种族和 BMI 分组计算百分比和例数
+install.packages("table1")
+library("table1")
+table1(~ data2$race|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+#按照年龄分组
+library("table1")
+table1(~ data2$anchor_age|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+#性别分组
+library("table1")
+table1(~ data2$gender|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+#icu类型
+library("table1")
+table1(~ data2$first_careunit|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+#分数
+library("table1")
+table1(~ data2$sofa|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$apsiii|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$lods|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$oasis|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$sirs|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+#生命体征
+library("table1")
+table1(~ data2$fio2_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$heart_rate_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$resp_rate_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$peep_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$pao2fio2ratio_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$MAP|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$temperature_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$tidal_volume_observed_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$spo2_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$urineoutput|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$glucose_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$platelets_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$tidal_volume_observed_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$minute_volume_mean|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+library("table1")
+table1(~ data2$norepinephrine_flag|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+data2$norepinephrine_flag<- ifelse(data2$norepinephrine_flag == 0, "No", "Yes")
+#转换回0,1
+data2$chronic_pulmonary_disease <- ifelse(data2$chronic_pulmonary_disease== "No", 0, 1)
+data2$diabetes_without_cc <- ifelse(data2$diabetes_without_cc == "No", 0, 1)
+data2$renal_disease <- ifelse(data2$renal_disease == "No", 0, 1)
+data2$malignant_cancer <- ifelse(data2$malignant_cancer == "No", 0, 1)
+data2$vasopressin_flag <- ifelse(data2$vasopressin_flag == "No", 0, 1)
+data2$norepinephrine_flag <- ifelse(data2$norepinephrine_flag == "No", 0, 1)
+#计量资料单因素方差分析
+#使用aov()函数进行方差分析
+model <- aov(data2$anchor_age ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$sofa ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$apsiii ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$lods ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$oasis ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$sirs ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+model <- aov(data2$resp_rate_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$temperature_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$glucose_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$spo2_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$MAP ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$platelets_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$minute_volume_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$respiratory_rate_set_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$tidal_volume_observed_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$peep_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$fio2_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$urineoutput ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$pao2fio2ratio_mean ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$diabetes_without_cc ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+
+#分类变量检验
+obs <- matrix(c(374,645,439,62,
+                55,102,73,16,
+                186,335,205,19), nrow=3, ncol=4, byrow=TRUE)
+result <- chisq.test(obs)
+result
+
+obs <- matrix(c(55,178,110,9,
+                455,689,492,79,
+                105,215,115,9), nrow=3, ncol=4, byrow=TRUE)
+result <- chisq.test(obs)
+result
+
+obs <- matrix(c(249,470,249,51,
+                366,612,468,46), nrow=2, ncol=4, byrow=TRUE)
+result <- chisq.test(obs)
+result
+model <- aov(data2$renal_disease ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$malignant_cancer ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+#单因素分析
+model <- aov(data2$vasopressin_flag ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$norepinephrine_flag ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+model <- aov(data2$hospital_expire_flag ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+# 创建一个新的列subset，其中只包含对应行的some_column变量
+data2$subset <- ifelse(data2$death_flag == 1 & data2$icu_stay_custime <= 28, data2$death_flag, 0)
+data2$subset90 <- ifelse(data2$death_flag == 1 & data2$icu_stay_custime <= 90, data2$death_flag, 0) 
+data2$subset365 <- ifelse(data2$death_flag == 1 & data2$icu_stay_custime <= 365, data2$death_flag, 0) 
+
+
+
+
+#单因素分析28d
+data2$subset<- ifelse(data2$subset == 0, "No", "Yes")
+library("table1")
+table1(~ data2$subset|data2$BMI1, data=data2, render.continuous=c(.="Mean±SD",.="Median [Min, Max]",.="Median [Q3-Q1]",.="Median[IQR]"))
+
+#转换回0,1
+data2$subset <- ifelse(data2$subset == "No", 0, 1)
+
+model <- aov(data2$subset ~ data2$BMI1, data = data2)
+#提取p值
+p_value <- summary(model)[[1]][["Pr(>F)"]][[1]]
+p_value
+
+#多元逻辑回归模型
+
+
+#30天的多元回归模型
+install.packages("car")  # 安装包
+library(car)             # 载入包
+model90 <- lm(data2$subset90 ~ data2$anchor_age + data2$gender + data2$BMI1 + data2$race + data2$pao2fio2ratio_mean + data2$temperature_mean + data2$chronic_pulmonary_disease + data2$renal_disease + data2$vasopressin_flag + data2$malignant_cancer + data2$sofa + data2$apsiii + data2$lods, data = data2)  # 建模
+summary(model90)
+vif(model30)                          # 计算VIF值
+# OR 值
+OR <- exp(coef(model90))
+ # 95% 可信区间
+CI <- confint(model30, level = 0.95)
+CI_reformat <- format(CI, scientific=FALSE, digits=2)
+# 将数据保存在本地磁盘上
+save(data, file = "mydata.RData")
+# 加载数据到工作环境中
+load("mydata.RData")
+#版本二
+install.packages("car")
+install.packages("expm")
+library(car)
+library(expm) 
+#重新编码
+
+
+model <- glm(data2$subset90 ~ data2$anchor_age + data2$gender + data2$BMI1 + data2$heart_rate_mean + data2$MAP + data2$temperature_mean + data2$pao2fio2ratio_mean + data2$spo2_mean + data2$vasopressin_flag + data2$chronic_pulmonary_disease + data2$renal_disease + data2$malignant_cancer + data2$peep_mean + data2$sofa + data2$apsiii + data2$lods + data2$oasis + data2$sirs + data2$minute_volume_mean + data2$peep_mean + data2$respiratory_rate_set_mean, data = data, family = binomial())
+summary(model)
+# OR 值
+OR <- exp(coef(model))
+# 95% 可信区间
+CI_value<- exp(confint(model))
+CI_reformat <- format(CI_value, scientific=FALSE, digits=2)
+
+#in-hospital死亡率
+model <- glm(data2$hospital_expire_flag ~ data2$anchor_age + data2$gender + data2$BMI1 + data2$heart_rate_mean + data2$MAP + data2$temperature_mean + data2$pao2fio2ratio_mean + data2$spo2_mean + data2$vasopressin_flag + data2$chronic_pulmonary_disease + data2$renal_disease + data2$malignant_cancer + data2$peep_mean + data2$sofa + data2$apsiii + data2$lods + data2$oasis + data2$sirs + data2$minute_volume_mean + data2$peep_mean + data2$respiratory_rate_set_mean + data2$tidal_volume_observed_mean + data2$urineoutput, data = data, family = binomial())
+summary(model)
+# OR 值
+OR <- exp(coef(model))
+# 95% 可信区间
+CI_value<- exp(confint(model))
+CI_reformat <- format(CI_value, scientific=FALSE, digits=2)
+#单变量KM曲线，按照BMI分类
+# 载入 survival 包
+install.packages("survival")
+library(survival)
+install.packages("rlang")
+install.packages("ggplot2")
+library(ggplot2)
+# 计算30天KM生存曲线
+
+library(survival)
+library(ggplot2)
+# 构造数据
+#28天
+data <- data2[data2$icu_stay_custime,c("icu_stay_custime", "death_flag", "BMI1")]
+names(data) <- c("time", "status", "bmi")
+data$time <-data2$icu_stay_custime
+data$status <-data2$death_flag

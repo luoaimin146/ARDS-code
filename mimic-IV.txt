@@ -1,0 +1,633 @@
+CREATE TABLE IF NOT EXISTS public.ards_maindiseases AS 
+SELECT
+        *
+FROM
+       mimic_hosp.d_icd_diagnoses 
+WHERE
+         (   long_title LIKE'%Acute respiratory distress syndrome%'
+        OR long_title LIKE'%Acute respiratory distress%'
+        OR long_title LIKE'%Acute respiratory failure%'
+        OR long_title LIKE'%Acute respiratory failure, unspecified whether with hypoxia or hypercapnia%'
+        OR long_title LIKE'%Acute respiratory failure with hypoxia%'
+        OR long_title LIKE'%Acute respiratory failure with hypercapnia%'
+        OR long_title LIKE'%Transfusion related acute lung injury%' 
+      OR long_title LIKE'%Transfusion-related acute lung injury%'
+        OR long_title LIKE'%Acute respiratory failure following trauma and surgery%'
+        OR long_title LIKE'%Acute and chronic respiratory failure following trauma and surgery%' 
+       OR long_title LIKE'%Acute and chronic respiratory failure%' 
+      OR long_title LIKE'%Acute and chronic respiratory failure with hypoxia%' 
+     OR long_title LIKE'%Acute and chronic respiratory failure with hypercapnia%' 
+    OR long_title LIKE'%Acute and chronic respiratory failure, unspecified whether with hypoxia or hypercapnia%' )
+       AND long_title NOT LIKE'%complicated by acute respiratory failure%' ;
+
+
+
+
+CREATE TABLE IF NOT EXISTS ards_patients AS
+SELECT
+        d1.*,
+        k1.long_title 
+FROM
+        mimic_hosp.diagnoses_icd d1
+        LEFT JOIN PUBLIC.ards_maindiseases k1 ON d1.icd_code=k1.icd_code
+ WHERE
+       d1.icd_code IN ( SELECT icd_code FROM PUBLIC.ards_maindiseases );
+
+select count(distinct subject_id)  from ards_patients;
+
+
+
+  
+CREATE TABLE IF NOT EXISTS PUBLIC.info_dm_admis AS 
+SELECT
+       k1.*, 
+       a2.anchor_age,
+       p1.gender,
+       a1.marital_status, 
+       a1.race,
+
+       a1.admittime, 
+       a1.dischtime, 
+       a1.edregtime, 
+       a1.edouttime,
+       a1.deathtime,
+       (datetime_diff(a1.dischtime,a1.admittime,'HOUR' )/24.0) as admitcustime,
+       case when a1.edregtime is not null then
+                         (datetime_diff(a1.edregtime,a1.edouttime,'HOUR')/24.0) 
+                         else 0 end as edcustime,
+       a1.hospital_expire_flag as death_flag,
+      case when a1.edregtime is not null then 1 else 0 end as ed_flag,
+      case when i1.subject_id is not null then 1 else 0 end as icu_flag
+FROM
+      PUBLIC.ards_patients k1
+      LEFT JOIN mimic_hosp.admissions a1 ON k1.subject_id=a1.subject_id 
+      AND k1.hadm_id=a1.hadm_id
+      LEFT JOIN PUBLIC.age a2 ON a1.subject_id=a2.subject_id 
+      AND a1.hadm_id=a2.hadm_id
+      LEFT JOIN mimic_hosp.patients p1 ON p1.subject_id=k1.subject_id 
+      LEFT JOIN ( SELECT icustays.subject_id,icustays.hadm_id
+                                             FROM mimic_icu.icustays
+                                             GROUP BY icustays.subject_id,icustays.hadm_id)  i1 
+                                             ON i1.subject_id=k1.subject_id
+       AND i1.hadm_id=k1.hadm_id 
+       ORDER BY
+                 k1.subject_id,
+                 k1.hadm_id, 
+                a1.admittime
+
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_stay As 
+SELECT
+        i1.subject_id, 
+        i1.hadm_id,
+				i1.stay_id,
+        COUNT( i1.stay_id ) AS icu_stay_count, 
+        SUM( i1.los ) AS icu_stay_custime,
+        MAX( i1.first_careunit ) AS first_careunit, 
+        MAX( i1.last_careunit ) AS last_careunit,
+       MAX ( CASE WHEN first_careunit = 'Coronary Care Unit(CCU)'
+                                      OR last_careunit ='Coronary Care Unit(CCU)'
+                               THEN 1 ELSE 0 END ) AS flag_CCU,
+       MAX( CASE WHEN first_careunit = 'Surgical Intensive Care Unit (SICU)'
+                                      OR last_careunit = 'Surgical Intensive Care Unit (SICU)'
+                               THEN 1 ELSE 0 END ) AS flag_SICU,
+        MAX( CASE WHEN first_careunit='Neuro Intermediate'
+                                      OR last_careunit='Neuro Intermediate'
+                               THEN 1 ELSE 0 END ) AS flag_NI,
+        MAX( CASE WHEN first_careunit= 'Neuro Stepdown'
+                                      OR last_careunit='Neuro Stepdown'
+                               THEN 1 ELSE 0 END ) AS flag_NS,
+        MAX( CASE WHEN first_careunit=
+                                     'Neuro Surgical Intensive Care Unit (Neuro SICU)'
+                                     OR last_careunit =
+                                     'Neuro Surgical Intensive Care Unit(Neuro SICU)'
+                               THEN 1 ELSE 0 END ) AS flag_NSICU,
+        MAX(  CASE WHEN first_careunit=
+                                      'Cardiac Vascular Intensive Care Unit(CVICU)'
+                                      OR last_careunit =
+                                       'Cardiac Vascular Intensive Care Unit(CVICU)'
+                                THEN 1 ELSE 0 END ) AS flag_CVIU,
+         MAX( CASE WHEN first_careunit='Trauma SICU (TSICU)'
+                                      OR last_careunit='Trauma SICU (TSICU)'
+                                THEN 1 ELSE 0 END ) AS flag_TSICU,
+         MAX( CASE WHEN first_careunit ='Medical Intensive Care Unit (MICU)'
+                                      OR last_careunit='Medical Intensive Care Unit (MICU)'
+                                      THEN 1 ELSE 0 END ) AS flag_MICU,
+         MAX( CASE WHEN first_careunit =
+                                       'Medical/Surgical Intensive Care Unit (MICU/SICU)'
+                                      OR last_careunit =
+                                       'Medical/Surgical Intensive Care Unit (MICU/SICU)'
+                                 THEN 1 ELSE 0 END ) AS flag_MSICU
+FROM
+          mimic_icu.icustays i1 
+WHERE
+           i1.hadm_id IN ( SELECT hadm_id FROM info_dm_admis )
+          AND i1.subject_id IN ( SELECT subject_id  FROM info_dm_admis) 
+GROUP BY
+           i1.subject_id,
+           i1.hadm_id,
+					 i1.stay_id
+ORDER BY
+           i1.subject_id, 
+           i1.hadm_id
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_allpati AS 
+SELECT
+             i1.subject_id, 
+             i1.hadm_id,
+             i1.stay_id
+FROM
+            mimic_icu.icustays i1 
+WHERE
+            i1.hadm_id IN ( SELECT hadm_id FROM info_dm_admis )
+           AND i1.subject_id IN ( SELECT subject_id FROM info_dm_admis ) 
+GROUP BY
+           i1.subject_id, 
+           i1.hadm_id, 
+           i1.stay_id 
+ORDER BY
+           i1.subject_id, 
+           i1.hadm_id,
+           i1.stay_id;
+
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_druginput AS 
+select i1.subject_id,i1.hadm_id,i1.stay_id,
+       case when m1.stay_id is not null then 1 else 0 end as dobutamine_flag,
+       case when m2.stay_id is not null then 1 else 0 end as dopamine_flag,
+       case when m3.stay_id is not null then 1 else 0 end as neuroblock_flag, 
+       case when m4.stay_id is not null then 1 else 0 end as epinephrine_flag,
+       case when m5.stay_id is not null then 1 else 0 end as norepinephrine_flag,
+       case when m6.stay_id is not null then 1 else 0 end as phenylephrine_flag,
+       case when m7.stay_id is not null then 1 else 0 end as antibiotic_flag,
+case when m8.stay_id is not null then 1 else 0 end as vasopressin_flag
+from public.detail i1
+             left join (select d1.stay_id from dobutamine d1
+                                                    GROUP BY d1.stay_id) m1
+             on i1.stay_id=m1.stay_id
+             left join (select d1.stay_id from dopamine d1
+                                                    GROUP BY d1.stay_id) m2
+             on i1.stay_id=m2.stay_id
+             left join (select d1.stay_id from neuroblock d1
+                                                    GROUP BY d1.stay_id) m3
+             on i1.stay_id=m3.stay_id
+            left join (select d1.stay_id from epinephrine d1
+                                                     GROUP BY d1.stay_id) m4
+             on i1.stay_id=m4.stay_id
+             left join (select d1.stay_id from norepinephrine d1
+                                                     GROUP BY d1.stay_id) m5
+             on i1.stay_id=m5.stay_id
+              left join (select d1.stay_id from phenylephrine d1
+                                                     GROUP BY d1.stay_id) m6
+             on i1.stay_id=m6.stay_id
+             left join (select d1.stay_id from antibiotic d1
+                                                      GROUP BY d1.stay_id) m7
+             on i1.stay_id=m7.stay_id
+						  left join (select d1.stay_id from vasopressin d1
+                                                      GROUP BY d1.stay_id) m8
+             on i1.stay_id=m8.stay_id
+where i1.subject_id in (select subject_id
+                                   from public.info_icu_stay) and
+              i1.hadm_id in( select hadm_id
+                                   from public.info_icu_stay);
+
+
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_allscore AS 
+SELECT
+      s2.*,
+      i1.hadm_id, 
+      s1.sofa, 
+      s3.apsiii, 
+      s4.lods, 
+      s5.oasis, 
+   FROM
+      info_icu_allpati  i1
+      INNER JOIN s_sofa s1 ON i1.stay_id=s1.stay_id 
+      INNER JOIN f_gcs s2 ON i1.stay_id=s2.stay_id
+     INNER JOIN s_apsiii s3 ON i1.stay_id=s3.stay_id 
+     INNER JOIN s_lods s4 ON i1.stay_id=s4.stay_id 
+     INNER JOIN s_oasis s5 ON i1.stay_id=s5.stay_id 
+
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_lab1 AS 
+WITH cbc AS (
+    SELECT
+        ie.stay_id
+        ie.hadm_id
+        , MIN(hematocrit) AS hematocrit_min
+        , MAX(hematocrit) AS hematocrit_max, AVG(hematocrit) AS hematocrit_mean
+        , MIN(hemoglobin) AS hemoglobin_min
+        , MAX(hemoglobin) AS hemoglobin_max, AVG(hemoglobin) AS hemoglobin_mean
+        , MIN(platelet) AS platelets_min
+        , MAX(platelet) AS platelets_max, AVG(platelet) AS platelets_mean
+        , MIN(wbc) AS wbc_min
+        , MAX(wbc) AS wbc_max, AVG(wbc) AS wbc_mean
+    FROM mimic_icu.icustays ie
+    LEFT JOIN public.complete_blood_count le
+        ON le.subject_id = ie.subject_id
+            AND le.charttime >= DATETIME_SUB(ie.intime, INTERVAL '6' HOUR)
+            AND le.charttime <= DATETIME_ADD(ie.intime, INTERVAL '1' DAY)
+    GROUP BY ie.stay_id
+)
+
+, chem AS (
+    SELECT
+        ie.stay_id
+        ie.hadm_id
+        , MIN(albumin) AS albumin_min, MAX(albumin) AS albumin_max, AVG(albumin) AS albumin_mean
+        , MIN(globulin) AS globulin_min, MAX(globulin) AS globulin_max , AVG(globulin) AS globulin_mean
+        , MIN(total_protein) AS total_protein_min
+        , MAX(total_protein) AS total_protein_max, AVG(total_protein) AS total_protein_mean
+        , MIN(aniongap) AS aniongap_min, MAX(aniongap) AS aniongap_max, AVG(aniongap) AS aniongap_mean
+        , MIN(bicarbonate) AS bicarbonate_min
+        , MAX(bicarbonate) AS bicarbonate_max, AVG(bicarbonate) AS bicarbonate_mean
+        , MIN(bun) AS bun_min, MAX(bun) AS bun_max, AVG(bun) AS bun_mean
+        , MIN(calcium) AS calcium_min, MAX(calcium) AS calcium_max, AVG(calcium) AS calcium_mean
+        , MIN(chloride) AS chloride_min, MAX(chloride) AS chloride_max, AVG(chloride) AS chloride_mean
+        , MIN(creatinine) AS creatinine_min, MAX(creatinine) AS creatinine_max, AVG(creatinine) AS creatinine_mean
+        , MIN(glucose) AS glucose_min, MAX(glucose) AS glucose_max, AVG(glucose) AS glucose_mean
+        , MIN(sodium) AS sodium_min, MAX(sodium) AS sodium_max, AVG(sodium) AS sodium_mean
+        , MIN(potassium) AS potassium_min, MAX(potassium) AS potassium_max, AVG(potassium) AS potassium_mean
+    FROM mimic_icu.icustays ie
+    LEFT JOIN PUBLIC.chemistry le
+        ON le.subject_id = ie.subject_id
+            AND le.charttime >= DATETIME_SUB(ie.intime, INTERVAL '6' HOUR)
+            AND le.charttime <= DATETIME_ADD(ie.intime, INTERVAL '1' DAY)
+    GROUP BY ie.stay_id
+)
+
+, diff AS (
+    SELECT
+        ie.stay_id
+         ie.hadm_id
+        , MIN(basophils_abs) AS abs_basophils_min
+        , MAX(basophils_abs) AS abs_basophils_max, AVG(basophils_abs) AS abs_basophils_mean
+        , MIN(eosinophils_abs) AS abs_eosinophils_min
+        , MAX(eosinophils_abs) AS abs_eosinophils_max, AVG(eosinophils_abs) AS abs_eosinophils_mean
+        , MIN(lymphocytes_abs) AS abs_lymphocytes_min
+        , MAX(lymphocytes_abs) AS abs_lymphocytes_max, AVG(lymphocytes_abs) AS abs_lymphocytes_mean
+        , MIN(monocytes_abs) AS abs_monocytes_min
+        , MAX(monocytes_abs) AS abs_monocytes_max, AVG(monocytes_abs) AS abs_monocytes_mean
+        , MIN(neutrophils_abs) AS abs_neutrophils_min
+        , MAX(neutrophils_abs) AS abs_neutrophils_max, AVG(neutrophils_abs) AS abs_neutrophils_mean
+        , MIN(atypical_lymphocytes) AS atyps_min
+        , MAX(atypical_lymphocytes) AS atyps_max, AVG(atypical_lymphocytes) AS atyps_mean
+        , MIN(bands) AS bands_min, MAX(bands) AS bands_max, AVG(bands) AS bands_mean
+        , MIN(immature_granulocytes) AS imm_granulocytes_min
+        , MAX(immature_granulocytes) AS imm_granulocytes_max, AVG(immature_granulocytes) AS imm_granulocytes_mean
+        , MIN(metamyelocytes) AS metas_min, MAX(metamyelocytes) AS metas_max, AVG(metamyelocytes) AS metas_mean
+        , MIN(nrbc) AS nrbc_min, MAX(nrbc) AS nrbc_max, AVG(nrbc) AS nrbc_mean
+    FROM mimic_icu.icustays ie
+    LEFT JOIN public.blood_diff le
+        ON le.subject_id = ie.subject_id
+            AND le.charttime >= DATETIME_SUB(ie.intime, INTERVAL '6' HOUR)
+            AND le.charttime <= DATETIME_ADD(ie.
+
+
+CREATE TABLE IF NOT EXISTS public.total1 AS
+select         t1.*,
+                    t2.heart_rate_min,
+                    t2.heart_rate_max,
+                     t2.heart_rate_mean,
+                    t2.sbp_min,
+                    t2.sbp_max,
+                     t2.sbp_mean,
+                     t2.dbp_min,
+                    t2.dbp_max,
+                     t2.dbp_mean,
+                     t2.mbp_min,
+                    t2.mbp_max,
+                     t2.mbp_mean,
+                    t2.resp_rate_min,
+                    t2.resp_rate_max,
+                     t2.resp_rate_mean,
+                     t2.temperature_min,
+                    t2.temperature_max,
+                     t2.temperature_mean,
+                      t2.spo2_min,
+                    t2.spo2_max,
+                     t2.spo2_mean,
+                     t2.glucose_min,
+                    t2.glucose_max,
+                     t2.glucose_mean,
+                     t2.height,
+                     t2.weight
+             from public.info_icu_stay t1 
+left join public.info_icu_vitalsign t2 
+on t1.subject_id=t2.subject_id
+and t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id
+
+
+
+
+CREATE TABLE IF NOT EXISTS public.total2 AS
+select         t1.*,
+                  t2.dobutamine_flag,
+                  t2.dopamine_flag,
+                   t2.neuroblock_flag,            
+                   t2.epinephrine_flag,
+                   t2.norepinephrine_flag,      
+                   t2.phenylephrine_flag,
+                   t2.antibiotic_flag,            
+                   t2.vasopressin_flag
+             from public.total1 t1 
+left join public.c_info_icu_druginput t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id 
+
+
+
+
+CREATE TABLE IF NOT EXISTS public.total3 AS
+select         t1.*,
+    t2.hematocrit_min, t2.hematocrit_max, t2.hematocrit_mean
+    , t2.hemoglobin_min, t2.hemoglobin_max, t2.hemoglobin_mean
+    , t2.platelets_min, t2.platelets_max, t2.platelets_mean
+    , t2.wbc_min, t2.wbc_max, t2.wbc_mean
+    , t2.albumin_min, t2.albumin_max, t2.albumin_mean
+    ,t2.globulin_min, t2.globulin_max, t2.globulin_mean
+    , t2.total_protein_min, t2.total_protein_max, t2.total_protein_mean
+    , t2.aniongap_min, t2.aniongap_max, t2.aniongap_mean
+    , t2.bicarbonate_min, t2.bicarbonate_max, t2.bicarbonate_mean
+    , t2.bun_min, t2.bun_max, t2.bun_mean
+    , t2.calcium_min, t2.calcium_max, t2.calcium_mean
+    , t2.chloride_min, t2.chloride_max, t2.chloride_mean
+    , t2.creatinine_min, t2.creatinine_max, t2.creatinine_mean
+    , t2.glucose_min, t2.glucose_max, t2.glucose_mean
+    , t2.sodium_min, t2.sodium_max, t2.sodium_mean
+    , t2.potassium_min, t2.potassium_max, t2.potassium_mean
+    , t2.abs_basophils_min, t2.abs_basophils_max, t2.abs_basophils_mean
+    , t2.abs_eosinophils_min, t2.abs_eosinophils_max, t2.abs_eosinophils_mean
+    , t2.abs_lymphocytes_min, t2.abs_lymphocytes_max, t2.abs_lymphocytes_mean
+    , t2.abs_monocytes_min, t2.abs_monocytes_max, t2.abs_monocytes_mean
+    , t2.abs_neutrophils_min, t2.abs_neutrophils_max, t2.abs_neutrophils_mean
+    , t2.atyps_min, t2.atyps_max, t2.atyps_mean
+    , t2.bands_min, t2.bands_max, t2.bands_mean
+    , t2.imm_granulocytes_min, t2.imm_granulocytes_max, t2.imm_granulocytes_mean
+    , t2.metas_min, t2.metas_max, t2.metas_mean
+    , t2.nrbc_min, t2.nrbc_max, t2.nrbc_mean
+    , t2.d_dimer_min, t2.d_dimer_max, t2.d_dimer_mean
+    , t2.fibrinogen_min, t2.fibrinogen_max, t2.fibrinogen_mean
+    , t2.thrombin_min, t2.thrombin_max, t2.thrombin_mean
+    , t2.inr_min, t2.inr_max, t2.inr_mean
+    , t2.pt_min, t2.pt_max, t2.pt_mean
+    , t2.ptt_min, t2.ptt_max, t2.ptt_mean
+    , t2.alt_min, t2.alt_max, t2.alt_mean
+    , t2.alp_min, t2.alp_max, t2.alp_mean
+    , t2.ast_min, t2.ast_max, t2.ast_mean
+    , t2.amylase_min, t2.amylase_max, t2.amylase_mean
+    , t2.bilirubin_total_min, t2.bilirubin_total_max, t2.bilirubin_total_mean
+    , t2.bilirubin_direct_min, t2.bilirubin_direct_max, t2.bilirubin_direct_mean
+    , t2.bilirubin_indirect_min, t2.bilirubin_indirect_max, t2.bilirubin_indirect_mean
+    , t2.ck_cpk_min, t2.ck_cpk_max, t2.ck_cpk_mean
+    , t2.ck_mb_min, t2.ck_mb_max, t2.ck_mb_mean
+    , t2.ggt_min, t2.ggt_max, t2.ggt_mean
+    , t2.ld_ldh_min, t2.ld_ldh_max, t2.ld_ldh_mean
+                       from public.total2 t1 
+left join public.info_icu_lab1 t2 
+on t1.subject_id=t2.subject_id
+and t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_charlson AS 
+SELECT
+			  b2.*,
+        i1.hadm_id,
+        b1.congestive_heart_failure,
+				b1.chronic_pulmonary_disease,
+				b1.diabetes_without_cc,
+				b1.renal_disease,
+				b1.malignant_cancer,
+				b1.metastatic_solid_tumor,
+                                          b3.pao2fio2ratio，
+                                b4.hypertension,
+                                b4.liver_diseases,
+                                b.5suspected_infection
+FROM
+        info_icu_allpati i1
+				LEFT JOIN pao1 b3 ON i1.hadm_id=b3.hadm_id 
+				INNER JOIN charlson b1 ON i1.hadm_id=b1.hadm_id 
+                                            INNER JOIN peep2 b2 ON i1.stay_id=b2.stay_id
+                                            INNER JOIN elixhauser b4 ON i1.stay_id=b2.stay_id
+                                            INNER JOIN peep2 b2 ON i1.stay_id=b2.stay_id
+
+
+
+
+CREATE TABLE IF NOT EXISTS public.total4 AS
+select         t1.*,              
+b1.chronic_pulmonary_disease,
+b1.diabetes_without_cc,
+b1.renal_disease,
+b1.malignant_cancer,
+b1.metastatic_solid_tumor,
+b1.peep, b1.pao2fio2ratio            
+                from public.total3 t1 
+left join public.info_icu_charlson t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id
+
+
+
+
+CREATE TABLE IF NOT EXISTS public.total5 AS
+select         t1.*,   
+               t2.sofa, 
+                 
+         from public.total4 t1 
+left join s_sofa t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.info_icu_charlson AS 
+SELECT
+			  b2.*,
+                                   i1.hadm_id,
+                                    b1.congestive_heart_failure,
+				b1.chronic_pulmonary_disease,
+				b1.mild_liver_disease,
+				b1.diabetes_without_cc,
+				b1.renal_disease,
+				b1.malignant_cancer,
+				b1.severe_liver_disease,
+				b1.metastatic_solid_tumor,
+        
+FROM
+                                             info_icu_allpati i1 
+				Ieft JOIN charlson b1 ON i1.hadm_id=b1.hadm_id 
+				
+				
+				CREATE TABLE IF NOT EXISTS PUBLIC.total5 AS 
+				SELECT
+							  t1.*,
+				        b1.congestive_heart_failure,
+								b1.chronic_pulmonary_disease,
+								b1.mild_liver_disease,
+								b1.diabetes_without_cc,
+								b1.renal_disease,
+								b1.malignant_cancer,
+								b1.severe_liver_disease,
+								b1.metastatic_solid_tumor
+				        
+				FROM
+				          total41 t1 
+								left join c_charlson b1
+								on t1.subject_id=b1.subject_id
+								And  t1.hadm_id=b1.hadm_id
+				
+CREATE TABLE IF NOT EXISTS public.total7 AS
+select         t1.*,   
+               t2.anchor_age,
+							 t2.gender,
+							 t2.marital_status,
+							 t2.race,
+							 t2.admittime,
+							 t2.dischtime,
+							 t2.deathtime,
+							 t2.admitcustime,
+							 t2.death_flag,
+							 t2.ed_flag,
+							 t2.icu_flag
+                 from public.total64 t1 
+left join c_info t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+And t1.stay_id=t2.stay_id
+
+
+CREATE TABLE IF NOT EXISTS public.c_apsiii AS
+SELECT DISTINCT * FROM s_apsiii
+
+				
+
+Uo
+
+CREATE TABLE IF NOT EXISTS public.total15 AS
+select         t1.*,   
+							 t2.respiratory_rate_set_min,
+							 t2.respiratory_rate_set_max,
+							 t2.respiratory_rate_set_mean,
+							 t2.minute_volume_min,
+							 t2.minute_volume_mean,
+							 t2.minute_volume_max,
+							 t2.peep_mean,
+							 t2.
+                 
+         from public.total14 t1 
+left join m_pao t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+
+
+
+
+vasopressin, red blood cell transfusion, liver disease and CRRT 
+
+来自 <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9994387/> 
+
+mechanical ventilation, antibiotic therapy, vasopressor therapy,crrt,corticosteroids therapy
+
+来自 <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8933624/> 
+
+CREATE TABLE IF NOT EXISTS public.total15 AS
+select         t1.*,   
+							 t2.respiratory_rate_set_min,
+							 t2.respiratory_rate_set_max,
+							 t2.respiratory_rate_set_mean,
+							 t2.minute_volume_min,
+							 t2.minute_volume_mean,
+							 t2.minute_volume_max,
+							 t2.peep_min,
+							 t2.peep_max,
+							 t2.fio2_min,
+							 t2.fio2_max,
+							 t2.fio2_mean,
+								t2.respiratory_rate_set_min,
+							 t2.respiratory_rate_set_max,
+							 t2.respiratory_rate_set_mean,
+							 t2.tidal_volume_observed_max,
+							 t2.tidal
+         from public.total14 t1 
+left join m_pao t2 
+on t1.subject_id=t2.subject_id
+And  t1.hadm_id=t2.hadm_id
+
+CREATE TABLE public.bg as
+-- get blood gas measures
+with vw0 as
+(
+  select
+      patientunitstayid
+    , respchartvaluelabel
+		, respChartValue
+    , respchartoffset
+    , respchartentryoffset
+  from respiratorycharting
+  where respchartvaluelabel in
+  (
+        'paO2'
+      , 'FiO2'
+      , 'PEEP'
+  )
+  group by  patientunitstayid, respchartvaluelabel, respChartValue, respchartoffset, respchartentryoffset
+  having count(distinct labresult)<=1
+)
+-- get the last lab to be revised
+, vw1 as
+(
+  select
+   respiratorycharting.patientunitstayid
+    , respiratorycharting.respchartvaluelabel
+		, respiratorycharting.respChartValue
+    , respiratorycharting.respchartoffset
+    , respiratorycharting.respchartentryoffset
+    , ROW_NUMBER() OVER
+        (
+          PARTITION BY respiratorycharting.respchartvaluelabel, respiratorycharting.respchartoffset
+          ORDER BY  respiratorycharting.respchartentryoffset DESC
+        ) as rn
+  from lab
+  inner join vw0
+    ON  lab.patientunitstayid = vw0.patientunitstayid
+    AND lab.labname = vw0.labname
+    AND lab.labresultoffset = vw0.labresultoffset
+    AND lab.labresultrevisedoffset = vw0.labresultrevisedoffset
+  WHERE
+     (lab.labname = 'paO2' and lab.labresult >= 0 )
+  OR (lab.labname = 'FiO2' and lab.labresult >= 0)
+	 OR (lab.labname = 'PEEP' and lab.labresult >= 0)
+)
+select
+    patientunitstayid
+  , labresultoffset as chartoffset
+  -- the aggregate (max()) only ever applies to 1 value due to the where clause
+  , MAX(case when labname = 'FiO2' then labresult else null end) as fio2_max
+	, MIN(case when labname = 'FiO2' then labresult else null end) AS fio2_min
+	, AVG(case when labname = 'FiO2' then labresult else null end) AS fio2_mean
+  , MAX(case when labname = 'paO2' then labresult else null end) as pao2_max
+	, MIN(case when labname = 'paO2' then labresult else null end) AS pao2_min
+	, AVG(case when labname = 'paO2' then labresult else null end) AS pao2_mean
+  , MAX(case when labname = 'PEEP' then labresult else null end) as peep_max
+	, MIN(case when labname = 'PEEP' then labresult else null end) AS peep_min
+	, AVG(case when labname = 'PEEP' then labresult else null end) AS peep_mean
+from vw1
+where rn = 1
+group by patientunitstayid, labresultoffset
+order by patientunitstayid, labresultoffset;
+
+

@@ -1,0 +1,1315 @@
+------确定所有ards病人
+CREATE TABLE ardspatient AS
+SELECT *
+FROM eicuii.patient
+WHERE apacheadmissiondx LIKE '%ARDS-adult respiratory distress syndrome, non-cardiogenic pulmonary edema%';
+----筛选住院时间大于48小时的病人
+
+CREATE TABLE public.ards AS
+SELECT *
+FROM eicuii.diagnosis
+WHERE icd9code = '518.82';
+
+
+
+
+筛选入院时间大于48小时
+CREATE TABLE public.ards48 AS
+SELECT *
+FROM ardspatient
+WHERE hospitaldischargeOffset > 48*60;
+
+
+CREATE TABLE public.ardspatient AS
+SELECT a.* 
+FROM eicuii.patient a
+RIGHT JOIN ARDS ON a.patientunitstayid = ARDS.patientunitstayid;
+
+
+-----提取第一天的生命体征
+
+CREATE TABLE public.labsfirstday AS
+
+SELECT
+  pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid
+  , min(CASE WHEN labname = 'anion gap' THEN labresult ELSE null END) as ANIONGAP_min
+  , max(CASE WHEN labname = 'anion gap' THEN labresult ELSE null END) as ANIONGAP_max
+  , min(CASE WHEN labname = 'albumin' THEN labresult ELSE null END) as ALBUMIN_min
+  , max(CASE WHEN labname = 'albumin' THEN labresult ELSE null END) as ALBUMIN_max
+  , min(CASE WHEN labname = '-bands' THEN labresult ELSE null END) as BANDS_min
+  , max(CASE WHEN labname = '-bands' THEN labresult ELSE null END) as BANDS_max
+  , min(CASE WHEN labname = 'bicarbonate' THEN labresult ELSE null END) as BICARBONATE_min
+  , max(CASE WHEN labname = 'bicarbonate' THEN labresult ELSE null END) as BICARBONATE_max
+  , min(CASE WHEN labname = 'HCO3' THEN labresult ELSE null END) as HCO3_min -- HCO3 = bicarb, but eICU has both;
+  , max(CASE WHEN labname = 'HCO3' THEN labresult ELSE null END) as HCO3_max -- elected not to combine them.
+  , min(CASE WHEN labname = 'total bilirubin' THEN labresult ELSE null END) as BILIRUBIN_min
+  , max(CASE WHEN labname = 'total bilirubin' THEN labresult ELSE null END) as BILIRUBIN_max
+  , min(CASE WHEN labname = 'creatinine' THEN labresult ELSE null END) as CREATININE_min
+  , max(CASE WHEN labname = 'creatinine' THEN labresult ELSE null END) as CREATININE_max
+  , min(CASE WHEN labname = 'chloride' THEN labresult ELSE null END) as CHLORIDE_min
+  , max(CASE WHEN labname = 'chloride' THEN labresult ELSE null END) as CHLORIDE_max
+  , min(CASE WHEN labname = 'glucose' THEN labresult ELSE null END) as GLUCOSE_min
+  , max(CASE WHEN labname = 'glucose' THEN labresult ELSE null END) as GLUCOSE_max
+  , min(CASE WHEN labname = 'Hct' THEN labresult ELSE null END) as HEMATOCRIT_min
+  , max(CASE WHEN labname = 'Hct' THEN labresult ELSE null END) as HEMATOCRIT_max
+  , min(CASE WHEN labname = 'Hgb' THEN labresult ELSE null END) as HEMOGLOBIN_min
+  , max(CASE WHEN labname = 'Hgb' THEN labresult ELSE null END) as HEMOGLOBIN_max
+  , min(CASE WHEN labname = 'lactate' THEN labresult ELSE null END) as LACTATE_min
+  , max(CASE WHEN labname = 'lactate' THEN labresult ELSE null END) as LACTATE_max
+  , min(CASE WHEN labname = 'platelets x 1000' THEN labresult ELSE null END) as PLATELET_min
+  , max(CASE WHEN labname = 'platelets x 1000' THEN labresult ELSE null END) as PLATELET_max
+  , min(CASE WHEN labname = 'potassium' THEN labresult ELSE null END) as POTASSIUM_min
+  , max(CASE WHEN labname = 'potassium' THEN labresult ELSE null END) as POTASSIUM_max
+  , min(CASE WHEN labname = 'PTT' THEN labresult ELSE null END) as PTT_min
+  , max(CASE WHEN labname = 'PTT' THEN labresult ELSE null END) as PTT_max
+  , min(CASE WHEN labname = 'PT - INR' THEN labresult ELSE null END) as INR_min
+  , max(CASE WHEN labname = 'PT - INR' THEN labresult ELSE null END) as INR_max
+  , min(CASE WHEN labname = 'PT' THEN labresult ELSE null END) as PT_min
+  , max(CASE WHEN labname = 'PT' THEN labresult ELSE null END) as PT_max
+  , min(CASE WHEN labname = 'sodium' THEN labresult ELSE null END) as SODIUM_min
+  , max(CASE WHEN labname = 'sodium' THEN labresult ELSE null end) as SODIUM_max
+  , min(CASE WHEN labname = 'BUN' THEN labresult ELSE null end) as BUN_min
+  , max(CASE WHEN labname = 'BUN' THEN labresult ELSE null end) as BUN_max
+  , min(CASE WHEN labname = 'WBC x 1000' THEN labresult ELSE null end) as WBC_min
+  , max(CASE WHEN labname = 'WBC x 1000' THEN labresult ELSE null end) as WBC_max
+ , min(CASE WHEN labname = 'FiO2' THEN labresult ELSE null end) as FiO2_min
+  , max(CASE WHEN labname = 'FiO2' THEN labresult ELSE null end) as FiO2_max
+  , min(CASE WHEN labname = 'paO2' THEN labresult ELSE null end) as paO2_min
+  , max(CASE WHEN labname = 'paO2' THEN labresult ELSE null end) as paO2_max
+  , min(CASE WHEN labname = 'PEEP' THEN labresult ELSE null end) as PEEP_min
+  , max(CASE WHEN labname = 'PEEP' THEN labresult ELSE null end) as PEEP_max
+
+
+
+FROM
+( -- begin query that extracts the data
+  SELECT p.uniquepid, p.patienthealthsystemstayid, p.patientunitstayid, le.labname
+
+  -- add in some sanity checks on the values; same checks from original MIMIC version
+  -- the where clause below requires all labresult to be > 0, so these are only upper limit checks
+  , CASE
+     WHEN labname = 'albumin' and le.labresult >   10 THEN null -- g/dL 'ALBUMIN'
+     WHEN labname = 'anion gap' and le.labresult > 10000 THEN null -- mEq/L 'ANION GAP'
+     WHEN labname = '-bands' and le.labresult <  0 THEN null -- immature band forms, %
+     WHEN labname = '-bands' and le.labresult >   100 THEN null -- immature band forms, %
+     WHEN labname = 'bicarbonate' and le.labresult > 10000 THEN null -- mEq/L 'BICARBONATE'
+     WHEN labname = 'HCO3' and le.labresult <  0  THEN null -- mEq/L 'BICARBONATE'
+     WHEN labname = 'bilirubin' and le.labresult >   150 THEN null -- mg/dL 'BILIRUBIN'
+     WHEN labname = 'chloride' and le.labresult > 10000 THEN null -- mEq/L 'CHLORIDE'
+     WHEN labname = 'creatinine' and le.labresult >   150 THEN null -- mg/dL 'CREATININE'
+     WHEN labname = 'glucose' and le.labresult <  0 THEN null -- mg/dL 'GLUCOSE'
+     WHEN labname = 'Hct' and le.labresult >   100 THEN null -- % 'HEMATOCRIT'
+     WHEN labname = 'Hgb' and le.labresult >    50 THEN null -- g/dL 'HEMOGLOBIN'
+     WHEN labname = 'lactate' and le.labresult >    50 THEN null -- mmol/L 'LACTATE'
+     WHEN labname = 'platelets x 1000' and le.labresult <  0 THEN null -- K/uL 'PLATELET'
+     WHEN labname = 'potassium' and le.labresult >    30 THEN null -- mEq/L 'POTASSIUM'
+     WHEN labname = 'PTT' and le.labresult >   150 THEN null -- sec 'PTT'
+     WHEN labname = 'PT - INR' and le.labresult >    50 THEN null -- 'INR'
+     WHEN labname = 'PT' and le.labresult >   150 THEN null -- sec 'PT'
+     WHEN labname = 'sodium' and le.labresult >   200 THEN null -- mEq/L == mmol/L 'SODIUM'
+     WHEN labname = 'BUN' and le.labresult < 0THEN null -- 'BUN'
+     WHEN labname = 'WBC x 1000' and le.labresult <  0 THEN null -- 'WBC'
+      WHEN labname = 'FiO2' and le.labresult  <  0 THEN null -- 'FiO2'
+     WHEN labname = 'paO2' and le.labresult <  0 THEN null -- 'paO2'
+    WHEN labname = 'PEEP' and le.labresult <  0 THEN null -- 'PEEP'
+
+ ELSE le.labresult
+   END AS labresult
+
+  FROM ardspatient p
+
+  LEFT JOIN lab le
+    ON p.patientunitstayid = le.patientunitstayid
+    AND le.labresultoffset <= 1440
+    AND le.labname in
+    (
+    	'anion gap',
+    	'albumin',
+    	'-bands',
+    	'bicarbonate',
+    	'HCO3',
+    	'total bilirubin',
+    	'creatinine',
+    	'chloride',
+    	'glucose',
+    	'Hct',
+    	'Hgb',
+    	'lactate',
+    	'platelets x 1000',
+    	'potassium',
+    	'PTT',
+    	'PT - INR',
+    	'PT',
+    	'sodium',
+    	'BUN',
+    	'WBC x 1000',
+            'FiO2', 
+           'paO2',
+          'PEEP' 
+    )
+    AND labresult IS NOT null AND labresult > 0 -- lab values cannot be 0 and cannot be negative
+) pvt
+GROUP BY pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid
+ORDER BY pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid;
+
+
+CREATE TABLE public.pbg as
+-- get blood gas measures
+with vw0 as
+(
+  select
+      patientunitstayid
+    , labname
+    , labresultoffset
+    , labresultrevisedoffset
+  from lab
+  where labname in
+  (
+        'paO2'
+      , 'paCO2'
+      , 'pH'
+      , 'FiO2'
+      , 'anion gap'
+      , 'Base Deficit'
+      , 'Base Excess'
+      , 'PEEP'
+  )
+  group by patientunitstayid, labname, labresultoffset, labresultrevisedoffset
+  having count(distinct labresult)<=1
+)
+-- get the last lab to be revised
+, vw1 as
+(
+  select
+      lab.patientunitstayid
+    , lab.labname
+    , lab.labresultoffset
+    , lab.labresultrevisedoffset
+    , lab.labresult
+    , ROW_NUMBER() OVER
+        (
+          PARTITION BY lab.patientunitstayid, lab.labname, lab.labresultoffset
+          ORDER BY lab.labresultrevisedoffset DESC
+        ) as rn
+  from lab
+  inner join vw0
+    ON  lab.patientunitstayid = vw0.patientunitstayid
+    AND lab.labname = vw0.labname
+    AND lab.labresultoffset = vw0.labresultoffset
+    AND lab.labresultrevisedoffset = vw0.labresultrevisedoffset
+  WHERE
+     (lab.labname = 'paO2' and lab.labresult > 0)
+  OR (lab.labname = 'paCO2' and lab.labresult > 0)
+  OR (lab.labname = 'pH' and lab.labresult > 0)
+  OR (lab.labname = 'FiO2' and lab.labresult >= 0)
+  OR (lab.labname = 'anion gap' and lab.labresult > 0)
+  OR (lab.labname = 'Base Deficit' and lab.labresult > 0)
+  OR (lab.labname = 'Base Excess' and lab.labresult > 0)
+  OR (lab.labname = 'PEEP' and lab.labresult > 0)
+)
+select
+    patientunitstayid
+  , labresultoffset as chartoffset
+  -- the aggregate (max()) only ever applies to 1 value due to the where clause
+  , MAX(case when labname = 'paO2' then labresult else null end) as pao2
+  , MAX(case when labname = 'paCO2' then labresult else null end) as paco2
+  , MAX(case when labname = 'pH' then labresult else null end) as pH
+ , MAX(case when labname = 'FiO2' then labresult else null end) as pao2
+  , MAX(case when labname = 'anion gap' then labresult else null end) as aniongap
+  , MAX(case when labname = 'Base Deficit' then labresult else null end) as basedeficit
+  , MAX(case when labname = 'Base Excess' then labresult else null end) as baseexcess
+  , MAX(case when labname = 'PEEP' then labresult else null end) as peep
+from vw1
+where rn = 1
+group by patientunitstayid, labresultoffset
+order by patientunitstayid, labresultoffset;
+
+CREATE TABLE public.bg as
+SELECT a.* 
+FROM pbg a
+RIGHT JOIN ardspatient ON a.patientunitstayid = ardspatient.patientunitstayid;
+
+CREATE TABLE public.resp as
+SELECT
+  pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid
+  , min(CASE WHEN labname = 'anion gap' THEN labresult ELSE null END) as ANIONGAP_min
+  , max(CASE WHEN labname = 'anion gap' THEN labresult ELSE null END) as ANIONGAP_max
+  , min(CASE WHEN labname = 'albumin' THEN labresult ELSE null END) as ALBUMIN_min
+  , max(CASE WHEN labname = 'albumin' THEN labresult ELSE null END) as ALBUMIN_max
+  , min(CASE WHEN labname = '-bands' THEN labresult ELSE null END) as BANDS_min
+  , max(CASE WHEN labname = '-bands' THEN labresult ELSE null END) as BANDS_max
+  , min(CASE WHEN labname = 'bicarbonate' THEN labresult ELSE null END) as BICARBONATE_min
+  , max(CASE WHEN labname = 'bicarbonate' THEN labresult ELSE null END) as BICARBONATE_max
+  , min(CASE WHEN labname = 'HCO3' THEN labresult ELSE null END) as HCO3_min -- HCO3 = bicarb, but eICU has both;
+  , max(CASE WHEN labname = 'HCO3' THEN labresult ELSE null END) as HCO3_max -- elected not to combine them.
+  , min(CASE WHEN labname = 'total bilirubin' THEN labresult ELSE null END) as BILIRUBIN_min
+  , max(CASE WHEN labname = 'total bilirubin' THEN labresult ELSE null END) as BILIRUBIN_max
+  , min(CASE WHEN labname = 'creatinine' THEN labresult ELSE null END) as CREATININE_min
+  , max(CASE WHEN labname = 'creatinine' THEN labresult ELSE null END) as CREATININE_max
+  , min(CASE WHEN labname = 'chloride' THEN labresult ELSE null END) as CHLORIDE_min
+  , max(CASE WHEN labname = 'chloride' THEN labresult ELSE null END) as CHLORIDE_max
+  , min(CASE WHEN labname = 'glucose' THEN labresult ELSE null END) as GLUCOSE_min
+  , max(CASE WHEN labname = 'glucose' THEN labresult ELSE null END) as GLUCOSE_max
+  , min(CASE WHEN labname = 'Hct' THEN labresult ELSE null END) as HEMATOCRIT_min
+  , max(CASE WHEN labname = 'Hct' THEN labresult ELSE null END) as HEMATOCRIT_max
+  , min(CASE WHEN labname = 'Hgb' THEN labresult ELSE null END) as HEMOGLOBIN_min
+  , max(CASE WHEN labname = 'Hgb' THEN labresult ELSE null END) as HEMOGLOBIN_max
+  , min(CASE WHEN labname = 'lactate' THEN labresult ELSE null END) as LACTATE_min
+  , max(CASE WHEN labname = 'lactate' THEN labresult ELSE null END) as LACTATE_max
+  , min(CASE WHEN labname = 'platelets x 1000' THEN labresult ELSE null END) as PLATELET_min
+  , max(CASE WHEN labname = 'platelets x 1000' THEN labresult ELSE null END) as PLATELET_max
+  , min(CASE WHEN labname = 'potassium' THEN labresult ELSE null END) as POTASSIUM_min
+  , max(CASE WHEN labname = 'potassium' THEN labresult ELSE null END) as POTASSIUM_max
+  , min(CASE WHEN labname = 'PTT' THEN labresult ELSE null END) as PTT_min
+  , max(CASE WHEN labname = 'PTT' THEN labresult ELSE null END) as PTT_max
+  , min(CASE WHEN labname = 'PT - INR' THEN labresult ELSE null END) as INR_min
+  , max(CASE WHEN labname = 'PT - INR' THEN labresult ELSE null END) as INR_max
+  , min(CASE WHEN labname = 'PT' THEN labresult ELSE null END) as PT_min
+  , max(CASE WHEN labname = 'PT' THEN labresult ELSE null END) as PT_max
+  , min(CASE WHEN labname = 'sodium' THEN labresult ELSE null END) as SODIUM_min
+  , max(CASE WHEN labname = 'sodium' THEN labresult ELSE null end) as SODIUM_max
+  , min(CASE WHEN labname = 'BUN' THEN labresult ELSE null end) as BUN_min
+  , max(CASE WHEN labname = 'BUN' THEN labresult ELSE null end) as BUN_max
+  , min(CASE WHEN labname = 'WBC x 1000' THEN labresult ELSE null end) as WBC_min
+  , max(CASE WHEN labname = 'WBC x 1000' THEN labresult ELSE null end) as WBC_max
+ , min(CASE WHEN labname = 'FiO2' THEN labresult ELSE null end) as FiO2_min
+  , max(CASE WHEN labname = 'FiO2' THEN labresult ELSE null end) as FiO2_max
+  , min(CASE WHEN labname = 'paO2' THEN labresult ELSE null end) as paO2_min
+  , max(CASE WHEN labname = 'paO2' THEN labresult ELSE null end) as paO2_max
+  , min(CASE WHEN labname = 'PEEP' THEN labresult ELSE null end) as PEEP_min
+  , max(CASE WHEN labname = 'PEEP' THEN labresult ELSE null end) as PEEP_max
+
+
+
+FROM
+( -- begin query that extracts the data
+  SELECT p.uniquepid, p.patienthealthsystemstayid, p.patientunitstayid, le.labname
+
+  -- add in some sanity checks on the values; same checks from original MIMIC version
+  -- the where clause below requires all labresult to be > 0, so these are only upper limit checks
+  , CASE
+     WHEN labname = 'albumin' and le.labresult >   10 THEN null -- g/dL 'ALBUMIN'
+     WHEN labname = 'anion gap' and le.labresult > 10000 THEN null -- mEq/L 'ANION GAP'
+     WHEN labname = '-bands' and le.labresult <  0 THEN null -- immature band forms, %
+     WHEN labname = '-bands' and le.labresult >   100 THEN null -- immature band forms, %
+     WHEN labname = 'bicarbonate' and le.labresult > 10000 THEN null -- mEq/L 'BICARBONATE'
+     WHEN labname = 'HCO3' and le.labresult <  0  THEN null -- mEq/L 'BICARBONATE'
+     WHEN labname = 'bilirubin' and le.labresult >   150 THEN null -- mg/dL 'BILIRUBIN'
+     WHEN labname = 'chloride' and le.labresult > 10000 THEN null -- mEq/L 'CHLORIDE'
+     WHEN labname = 'creatinine' and le.labresult >   150 THEN null -- mg/dL 'CREATININE'
+     WHEN labname = 'glucose' and le.labresult <  0 THEN null -- mg/dL 'GLUCOSE'
+     WHEN labname = 'Hct' and le.labresult >   100 THEN null -- % 'HEMATOCRIT'
+     WHEN labname = 'Hgb' and le.labresult >    50 THEN null -- g/dL 'HEMOGLOBIN'
+     WHEN labname = 'lactate' and le.labresult >    50 THEN null -- mmol/L 'LACTATE'
+     WHEN labname = 'platelets x 1000' and le.labresult <  0 THEN null -- K/uL 'PLATELET'
+     WHEN labname = 'potassium' and le.labresult >    30 THEN null -- mEq/L 'POTASSIUM'
+     WHEN labname = 'PTT' and le.labresult >   150 THEN null -- sec 'PTT'
+     WHEN labname = 'PT - INR' and le.labresult >    50 THEN null -- 'INR'
+     WHEN labname = 'PT' and le.labresult >   150 THEN null -- sec 'PT'
+     WHEN labname = 'sodium' and le.labresult >   200 THEN null -- mEq/L == mmol/L 'SODIUM'
+     WHEN labname = 'BUN' and le.labresult < 0THEN null -- 'BUN'
+     WHEN labname = 'WBC x 1000' and le.labresult <  0 THEN null -- 'WBC'
+      WHEN labname = 'FiO2' and le.labresult  <  0 THEN null -- 'FiO2'
+     WHEN labname = 'paO2' and le.labresult <  0 THEN null -- 'paO2'
+    WHEN labname = 'PEEP' and le.labresult <  0 THEN null -- 'PEEP'
+
+ ELSE le.labresult
+   END AS labresult
+
+  FROM ardspatient p
+
+  LEFT JOIN lab le
+    ON p.patientunitstayid = le.patientunitstayid
+    AND le.labresultoffset <= 1440
+    AND le.labname in
+    (
+    	'anion gap',
+    	'albumin',
+    	'-bands',
+    	'bicarbonate',
+    	'HCO3',
+    	'total bilirubin',
+    	'creatinine',
+    	'chloride',
+    	'glucose',
+    	'Hct',
+    	'Hgb',
+    	'lactate',
+    	'platelets x 1000',
+    	'potassium',
+    	'PTT',
+    	'PT - INR',
+    	'PT',
+    	'sodium',
+    	'BUN',
+    	'WBC x 1000',
+            'FiO2', 
+           'paO2',
+          'PEEP' 
+    )
+    AND labresult IS NOT null AND labresult > 0 -- lab values cannot be 0 and cannot be negative
+) pvt
+GROUP BY pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid
+ORDER BY pvt.uniquepid, pvt.patienthealthsystemstayid, pvt.patientunitstayid;
+
+
+
+
+
+SELECT
+    rc.patientunitstayid,
+    MAX(CASE WHEN rc.respchartvaluelabel = 'PEEP' THEN rc.respchartvalue END) AS max_peep
+  FROM
+    eicuii.respiratorycharting
+  WHERE
+    rc.respchartentryoffset >= 480  
+  GROUP BY
+
+
+CREATE TABLE public.vital as
+-- create columns with only numeric data
+with nc as
+(
+select
+    patientunitstayid
+  , nursingchartoffset
+  , nursingchartentryoffset
+  , case
+      when nursingchartcelltypevallabel = 'Heart Rate'
+       and nursingchartcelltypevalname = 'Heart Rate'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as heartrate
+  , case
+      when nursingchartcelltypevallabel = 'Respiratory Rate'
+       and nursingchartcelltypevalname = 'Respiratory Rate'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as RespiratoryRate
+  , case
+      when nursingchartcelltypevallabel = 'O2 Saturation'
+       and nursingchartcelltypevalname = 'O2 Saturation'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as o2saturation
+  , case
+      when nursingchartcelltypevallabel = 'Non-Invasive BP'
+       and nursingchartcelltypevalname = 'Non-Invasive BP Systolic'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as nibp_systolic
+  , case
+      when nursingchartcelltypevallabel = 'Non-Invasive BP'
+       and nursingchartcelltypevalname = 'Non-Invasive BP Diastolic'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as nibp_diastolic
+  , case
+      when nursingchartcelltypevallabel = 'Non-Invasive BP'
+       and nursingchartcelltypevalname = 'Non-Invasive BP Mean'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as nibp_mean
+  , case
+      when nursingchartcelltypevallabel = 'Temperature'
+       and nursingchartcelltypevalname = 'Temperature (C)'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as temperature
+  , case
+      when nursingchartcelltypevallabel = 'Temperature'
+       and nursingchartcelltypevalname = 'Temperature Location'
+          then nursingchartvalue
+      else null end
+    as TemperatureLocation
+  , case
+      when nursingchartcelltypevallabel = 'Invasive BP'
+       and nursingchartcelltypevalname = 'Invasive BP Systolic'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as ibp_systolic
+  , case
+      when nursingchartcelltypevallabel = 'Invasive BP'
+       and nursingchartcelltypevalname = 'Invasive BP Diastolic'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as ibp_diastolic
+  , case
+      when nursingchartcelltypevallabel = 'Invasive BP'
+       and nursingchartcelltypevalname = 'Invasive BP Mean'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      -- other map fields
+      when nursingchartcelltypevallabel = 'MAP (mmHg)'
+       and nursingchartcelltypevalname = 'Value'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      when nursingchartcelltypevallabel = 'Arterial Line MAP (mmHg)'
+       and nursingchartcelltypevalname = 'Value'
+       and nursingchartvalue ~ '^[-]?[0-9]+[.]?[0-9]*$'
+       and nursingchartvalue not in ('-','.')
+          then cast(nursingchartvalue as numeric)
+      else null end
+    as ibp_mean
+  from nursecharting
+  -- speed up by only looking at a subset of charted data
+  where nursingchartcelltypecat in
+  (
+    'Vital Signs','Scores','Other Vital Signs and Infusions'
+  )
+)
+select
+  patientunitstayid
+, nursingchartoffset as chartoffset
+, nursingchartentryoffset as entryoffset
+, avg(case when heartrate >= 25 and heartrate <= 225 then heartrate else null end) as heartrate
+, avg(case when RespiratoryRate >= 0 and RespiratoryRate <= 60 then RespiratoryRate else null end) as RespiratoryRate
+, avg(case when o2saturation >= 0 and o2saturation <= 100 then o2saturation else null end) as spo2
+, avg(case when nibp_systolic >= 25 and nibp_systolic <= 250 then nibp_systolic else null end) as nibp_systolic
+, avg(case when nibp_diastolic >= 1 and nibp_diastolic <= 200 then nibp_diastolic else null end) as nibp_diastolic
+, avg(case when nibp_mean >= 1 and nibp_mean <= 250 then nibp_mean else null end) as nibp_mean
+, avg(case when temperature >= 25 and temperature <= 46 then temperature else null end) as temperature
+, max(temperaturelocation) as temperaturelocation
+, avg(case when ibp_systolic >= 1 and ibp_systolic <= 300 then ibp_systolic else null end) as ibp_systolic
+, avg(case when ibp_diastolic >= 1 and ibp_diastolic <= 200 then ibp_diastolic else null end) as ibp_diastolic
+, avg(case when ibp_mean >= 1 and ibp_mean <= 250 then ibp_mean else null end) as ibp_mean
+from nc
+WHERE heartrate IS NOT NULL
+OR RespiratoryRate IS NOT NULL
+OR o2saturation IS NOT NULL
+OR nibp_systolic IS NOT NULL
+OR nibp_diastolic IS NOT NULL
+OR nibp_mean IS NOT NULL
+OR temperature IS NOT NULL
+OR temperaturelocation IS NOT NULL
+OR ibp_systolic IS NOT NULL
+OR ibp_diastolic IS NOT NULL
+OR ibp_mean IS NOT NULL
+group by patientunitstayid, nursingchartoffset, nursingchartentryoffset
+order by patientunitstayid, nursingchartoffset, nursingchartentryoffset;
+
+
+CREATE TABLE IF NOT EXISTS PUBLIC.gcs AS 
+with nc as
+(
+select
+  patientunitstayid
+  , nursingchartoffset as chartoffset
+  , min(case
+      when nursingchartcelltypevallabel = 'Glasgow coma score'
+       and nursingchartcelltypevalname = 'GCS Total'
+          then cast(nursingchartvalue as numeric)
+      when nursingchartcelltypevallabel = 'Score (Glasgow Coma Scale)'
+       and nursingchartcelltypevalname = 'Value'
+          then cast(nursingchartvalue as numeric)
+      else null end)
+    as gcs
+  , min(case
+      when nursingchartcelltypevallabel = 'Glasgow coma score'
+       and nursingchartcelltypevalname = 'Motor'
+          then cast(nursingchartvalue as numeric)
+      else null end)
+    as gcsmotor
+  , min(case
+      when nursingchartcelltypevallabel = 'Glasgow coma score'
+       and nursingchartcelltypevalname = 'Verbal'
+          then cast(nursingchartvalue as numeric)
+      else null end)
+    as gcsverbal
+  , min(case
+      when nursingchartcelltypevallabel = 'Glasgow coma score'
+       and nursingchartcelltypevalname = 'Eyes'
+          then cast(nursingchartvalue as numeric)
+      else null end)
+    as gcseyes
+  from nursecharting
+  -- speed up by only looking at a subset of charted data
+  where nursingchartcelltypecat in
+  (
+    'Scores', 'Other Vital Signs and Infusions'
+  )
+  group by patientunitstayid, nursingchartoffset
+)
+-- apply some preprocessing to fields
+, ncproc AS
+(
+  select
+    patientunitstayid
+  , chartoffset
+  , case when gcs > 2 and gcs < 16 then gcs else null end as gcs
+  , gcsmotor, gcsverbal, gcseyes
+  from nc
+)
+select
+  patientunitstayid
+  , chartoffset
+  , gcs
+  , gcsmotor, gcsverbal, gcseyes
+FROM ncproc
+WHERE gcs IS NOT NULL
+OR gcsmotor IS NOT NULL
+OR gcsverbal IS NOT NULL
+OR gcseyes IS NOT NULL
+ORDER BY patientunitstayid
+CREATE TABLE PUBLIC.charlson AS 
+WITH diag AS
+(
+    SELECT 
+       patientunitstayid
+        , CASE WHEN icd_version = 9 THEN icd_code ELSE NULL END AS icd9_code
+				FROM diagnosis.diagnosisstring diag
+)
+, com AS
+(
+    SELECT
+        ad.hadm_id
+
+        -- Myocardial infarction
+        , MAX(CASE WHEN
+            SUBSTR(icd9_code, 1, 3) IN ('410','412')
+            THEN 1 
+            ELSE 0 END) AS myocardial_infarct
+
+        -- Congestive heart failure
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) = '428'
+            OR
+            SUBSTR(icd9_code, 1, 5) IN ('39891','40201','40211','40291','40401','40403',
+                          '40411','40413','40491','40493')
+            OR 
+            SUBSTR(icd9_code, 1, 4) BETWEEN '4254' AND '4259'
+            THEN 1 
+            ELSE 0 END) AS congestive_heart_failure
+
+        -- Peripheral vascular disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('440','441')
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('0930','4373','4471','5571','5579','V434')
+            OR
+            SUBSTR(icd9_code, 1, 4) BETWEEN '4431' AND '4439'
+           
+            THEN 1 
+            ELSE 0 END) AS peripheral_vascular_disease
+
+        -- Cerebrovascular disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) BETWEEN '430' AND '438'
+            OR
+            SUBSTR(icd9_code, 1, 5) = '36234'
+            OR
+            SUBSTR(icd10_code, 1, 3) IN ('G45','G46')
+            OR 
+            SUBSTR(icd10_code, 1, 3) BETWEEN 'I60' AND 'I69'
+            OR
+            SUBSTR(icd10_code, 1, 4) = 'H340'
+            THEN 1 
+            ELSE 0 END) AS cerebrovascular_disease
+
+        -- Dementia
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) = '290'
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('2941','3312')
+            OR
+            SUBSTR(icd10_code, 1, 3) IN ('F00','F01','F02','F03','G30')
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('F051','G311')
+            THEN 1 
+            ELSE 0 END) AS dementia
+
+        -- Chronic pulmonary disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) BETWEEN '490' AND '505'
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('4168','4169','5064','5081','5088')
+            OR 
+            SUBSTR(icd10_code, 1, 3) BETWEEN 'J40' AND 'J47'
+            OR 
+            SUBSTR(icd10_code, 1, 3) BETWEEN 'J60' AND 'J67'
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('I278','I279','J684','J701','J703')
+            THEN 1 
+            ELSE 0 END) AS chronic_pulmonary_disease
+
+        -- Rheumatic disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) = '725'
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('4465','7100','7101','7102','7103',
+                                                  '7104','7140','7141','7142','7148')
+            OR
+            SUBSTR(icd10_code, 1, 3) IN ('M05','M06','M32','M33','M34')
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('M315','M351','M353','M360')
+            THEN 1 
+            ELSE 0 END) AS rheumatic_disease
+
+        -- Peptic ulcer disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('531','532','533','534')
+            OR
+            SUBSTR(icd10_code, 1, 3) IN ('K25','K26','K27','K28')
+            THEN 1 
+            ELSE 0 END) AS peptic_ulcer_disease
+
+        -- Mild liver disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('570','571')
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('0706','0709','5733','5734','5738','5739','V427')
+            OR
+            SUBSTR(icd9_code, 1, 5) IN ('07022','07023','07032','07033','07044','07054')
+            OR
+            SUBSTR(icd10_code, 1, 3) IN ('B18','K73','K74')
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('K700','K701','K702','K703','K709','K713',
+                                                   'K714','K715','K717','K760','K762',
+                                                   'K763','K764','K768','K769','Z944')
+            THEN 1 
+            ELSE 0 END) AS mild_liver_disease
+
+        -- Diabetes without chronic complication
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 4) IN ('2500','2501','2502','2503','2508','2509') 
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('E100','E10l','E106','E108','E109','E110','E111',
+                                                   'E116','E118','E119','E120','E121','E126','E128',
+                                                   'E129','E130','E131','E136','E138','E139','E140',
+                                                   'E141','E146','E148','E149')
+            THEN 1 
+            ELSE 0 END) AS diabetes_without_cc
+
+        -- Diabetes with chronic complication
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 4) IN ('2504','2505','2506','2507')
+            OR
+            SUBSTR(icd10_code, 1, 4) IN ('E102','E103','E104','E105','E107','E112','E113',
+                                                   'E114','E115','E117','E122','E123','E124','E125',
+                                                   'E127','E132','E133','E134','E135','E137','E142',
+                                                   'E143','E144','E145','E147')
+            THEN 1 
+            ELSE 0 END) AS diabetes_with_cc
+
+        -- Hemiplegia or paraplegia
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('342','343')
+            THEN 1 
+            ELSE 0 END) AS paraplegia
+
+        -- Renal disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('582','585','586','V56')
+            OR
+            SUBSTR(icd9_code, 1, 4) IN ('5880','V420','V451')
+            OR
+            SUBSTR(icd9_code, 1, 4) BETWEEN '5830' AND '5837'
+            OR
+            SUBSTR(icd9_code, 1, 5) IN ('40301','40311','40391','40402','40403','40412','40413','40492','40493')          
+																							            THEN 1 
+            ELSE 0 END) AS renal_disease
+
+        -- Any malignancy, including lymphoma and leukemia, except malignant neoplasm of skin
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) BETWEEN '140' AND '172'
+            OR
+            SUBSTR(icd9_code, 1, 4) BETWEEN '1740' AND '1958'
+            OR
+            SUBSTR(icd9_code, 1, 3) BETWEEN '200' AND '208'
+            OR
+            SUBSTR(icd9_code, 1, 4) = '2386'
+            THEN 1 
+            ELSE 0 END) AS malignant_cancer
+
+        -- Moderate or severe liver disease
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 4) IN ('4560','4561','4562')
+            OR
+            SUBSTR(icd9_code, 1, 4) BETWEEN '5722' AND '5728'
+            
+            THEN 1 
+            ELSE 0 END) AS severe_liver_disease
+
+        -- Metastatic solid tumor
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('196','197','198','199')
+           
+            THEN 1 
+            ELSE 0 END) AS metastatic_solid_tumor
+
+        -- AIDS/HIV
+        , MAX(CASE WHEN 
+            SUBSTR(icd9_code, 1, 3) IN ('042','043','044')
+            THEN 1 
+            ELSE 0 END) AS aids
+    FROM patient ad
+    LEFT JOIN diag
+    ON ad.patientunitstayid = diag.patientunitstayid
+    GROUP BY ad.patientunitstayid
+)
+, ag AS
+(
+    SELECT 
+        hadm_id
+        , age
+        , CASE WHEN age <= 40 THEN 0
+    WHEN age <= 50 THEN 1
+    WHEN age <= 60 THEN 2
+    WHEN age <= 70 THEN 3
+    ELSE 4 END AS age_score
+    FROM patient.age
+)
+SELECT 
+    ad.subject_id
+    , ad.hadm_id
+    , ag.age_score
+    , myocardial_infarct
+    , congestive_heart_failure
+    , peripheral_vascular_disease
+    , cerebrovascular_disease
+    , dementia
+    , chronic_pulmonary_disease
+    , rheumatic_disease
+    , peptic_ulcer_disease
+    , mild_liver_disease
+    , diabetes_without_cc
+    , diabetes_with_cc
+    , paraplegia
+    , renal_disease
+    , malignant_cancer
+    , severe_liver_disease 
+    , metastatic_solid_tumor 
+    , aids
+    -- Calculate the Charlson Comorbidity Score using the original
+    -- weights from Charlson, 1987.
+    , age_score
+    + myocardial_infarct + congestive_heart_failure + peripheral_vascular_disease
+    + cerebrovascular_disease + dementia + chronic_pulmonary_disease
+    + rheumatic_disease + peptic_ulcer_disease
+    + GREATEST(mild_liver_disease, 3*severe_liver_disease)
+    + GREATEST(2*diabetes_with_cc, diabetes_without_cc)
+    + GREATEST(2*malignant_cancer, 6*metastatic_solid_tumor)
+    + 2*paraplegia + 2*renal_disease 
+    + 6*aids
+    AS charlson_comorbidity_index
+FROM patient ad
+LEFT JOIN com
+ON ad.patientunitstayid = com.patientunitstayid
+LEFT JOIN ag
+ON com.patientunitstayid = ag.patientunitstayid
+;
+  
+CREATE TABLE public.mp_charlson as
+SELECT
+	s.patientunitstayid,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/other',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/brain',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/carcinomatosis',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/nodes',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/lung',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/intra-abdominal',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/bone',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Metastases/liver')
+    THEN 1 ELSE 0 END) AS mets6,
+
+  MAX (CASE WHEN ph.pasthistorypath = 'notes/Progress Notes/Past History/Organ Systems/Infectious Disease (R)/AIDS/AIDS' THEN 1 ELSE 0 END) AS aids6,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/UGI bleeding',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/varices',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/coma',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/jaundice',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/ascites',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/encephalopathy')
+    THEN 1 ELSE 0 END) AS liver3,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/multiple/multiple',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/stroke - remote',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/stroke - within 5 years',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/stroke - within 2 years',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/stroke - date unknown',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/Strokes/stroke - within 6 months')
+		THEN 1 ELSE 0 END) AS stroke2,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - creatinine 1-2',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - creatinine 3-4',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - creatinine > 5',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - baseline creatinine unknown',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - creatinine 4-5',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Insufficiency/renal insufficiency - creatinine 2-3',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Failure/renal failure - peritoneal dialysis',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Failure/renal failure- not currently dialyzed',
+		'notes/Progress Notes/Past History/Organ Systems/Renal  (R)/Renal Failure/renal failure - hemodialysis')
+		THEN 1 ELSE 0 END) AS renal2,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Endocrine (R)/Insulin Dependent Diabetes/insulin dependent diabetes',
+		'notes/Progress Notes/Past History/Organ Systems/Endocrine (R)/Non-Insulin Dependent Diabetes/non-medication dependent',
+		'notes/Progress Notes/Past History/Organ Systems/Endocrine (R)/Non-Insulin Dependent Diabetes/medication dependent')
+		THEN 1 ELSE 0 END) AS dm,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/Anthracyclines (adriamycin, daunorubicin)',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/bone',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/stomach',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/bile duct',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/kidney',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/unknown',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/primary site',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/breast',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/uterus',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/bone',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/prostate',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/liver',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/pancreas - adenocarcinoma',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/ovary',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/other',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/sarcoma',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/chemotherapy within past mo.',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/other',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/Alkylating agents (bleomycin, cytoxan, cyclophos.)',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/testes',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/lung',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/melanoma',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/nodes',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/BMT within past 12 mos.',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/Cis-platinum',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/liver',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/head and neck',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/esophagus',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/bladder',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/chemotherapy within past 6 mos.',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/lung',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/none',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/pancreas - islet cell'
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/colon',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Radiation Therapy within past 6 months/brain',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer Therapy/Chemotherapy/Vincristine',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Cancer-Primary Site/brain')
+    THEN 1 ELSE 0 END) as cancer2,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/AML',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/ALL',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/CLL',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/CML',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/leukemia - other')
+    THEN 1 ELSE 0 END) as leukemia2,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/non-Hodgkins lymphoma',
+		'notes/Progress Notes/Past History/Organ Systems/Hematology/Oncology (R)/Cancer/Hematologic Malignancy/Hodgkins disease')
+    THEN 1 ELSE 0 END) as lymphoma2,
+
+  MAX (CASE WHEN ph.pasthistorypath IN(
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/MI - within 5 years',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/MI - remote',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/MI - within 6 months',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/MI - date unknown',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/MI - within 2 years',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Myocardial Infarction/multiple/multiple')
+    THEN 1 ELSE 0 END) AS mi1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF - class I',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF - class II',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF - severity unknown',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF - class III',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF',
+		'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Congestive Heart Failure/CHF - class IV')
+    THEN 1 ELSE 0 END) AS chf1,
+
+  MAX (CASE WHEN ph.pasthistorypath = 'notes/Progress Notes/Past History/Organ Systems/Cardiovascular (R)/Peripheral Vascular Disease/peripheral vascular disease' THEN 1 ELSE 0 END) AS pvd1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/TIA(s) - within 6 months',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/TIA(s) - within 2 years',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/TIA(s) - remote',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/TIA(s) - within 5 years',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/multiple/multiple',
+		'notes/Progress Notes/Past History/Organ Systems/Neurologic/TIA(s)/TIA(s) - date unknown')
+      THEN 1 ELSE 0 END) AS tia1,
+
+  MAX (CASE WHEN ph.pasthistorypath = 'notes/Progress Notes/Past History/Organ Systems/Neurologic/Dementia/dementia' THEN 1 ELSE 0 END) AS dementia1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Pulmonary/COPD/COPD  - no limitations',
+		'notes/Progress Notes/Past History/Organ Systems/Pulmonary/COPD/COPD  - moderate',
+		'notes/Progress Notes/Past History/Organ Systems/Pulmonary/COPD/COPD  - severe')
+    THEN 1 ELSE 0 END) AS copd1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Rheumatic/SLE/SLE',
+		'notes/Progress Notes/Past History/Organ Systems/Rheumatic/Rheumatoid Arthritis/rheumatoid arthritis',
+		'notes/Progress Notes/Past History/Organ Systems/Rheumatic/Scleroderma/scleroderma',
+		'notes/Progress Notes/Past History/Organ Systems/Rheumatic/Vasculitis/vasculitis',
+		'notes/Progress Notes/Past History/Organ Systems/Rheumatic/Dermato/Polymyositis/dermatomyositis')
+    THEN 1 ELSE 0 END) AS ctd1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Peptic Ulcer Disease/peptic ulcer disease',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Peptic Ulcer Disease/peptic ulcer disease with h/o GI bleeding',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Peptic Ulcer Disease/hx GI bleeding/no')
+    THEN 1 ELSE 0 END) AS pud1,
+
+  MAX (CASE WHEN ph.pasthistorypath IN (
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/clinical diagnosis',
+		'notes/Progress Notes/Past History/Organ Systems/Gastrointestinal (R)/Cirrhosis/biopsy proven')
+    THEN 1 ELSE 0 END) as liver1
+
+FROM patient s
+LEFT JOIN pasthistory ph
+ON s.patientunitstayid = ph.patientunitstayid
+GROUP BY s.patientunitstayid
+ORDER BY s.patientunitstayid;
+
+
+CREATE TABLE public.mp_oasis AS
+with pt as
+(
+select pt.patientunitstayid
+  -- hospital admit offset is negative, as it is time from hosp admit to ICU admit
+  , -pt.hospitaladmitoffset/60.0 as preiculos
+  -- convert age to numeric
+  -- assume > 89 is 90 which gets max points in OASIS
+  , CASE WHEN pt.age = '> 89' then 90
+         WHEN pt.age = '' THEN NULL
+      else pt.age::numeric end as age
+  , CASE
+      WHEN aav.verbal = -1 OR aav.motor = -1 OR aav.eyes = -1 THEN NULL
+      ELSE aav.verbal + aav.motor + aav.eyes
+    end as gcs
+  -- vitals
+  , CASE WHEN aav.respiratoryrate = -1 THEN NULL ELSE aav.respiratoryrate END AS resprate
+  , CASE WHEN aav.temperature = -1 THEN NULL ELSE aav.temperature END AS tempc
+  , CASE WHEN aav.heartrate = -1 THEN NULL ELSE aav.heartrate END AS heartrate
+  , CASE WHEN aav.meanbp = -1 THEN NULL ELSE aav.meanbp END AS meanbp
+  , CASE WHEN aav.urine = -1 THEN NULL ELSE aav.urine END AS UrineOutput
+  -- binary flags
+  , apv.oOBVentDay1 as mechvent
+  , apv.electivesurgery
+from patient pt
+LEFT JOIN apacheapsvar aav
+  ON pt.patientunitstayid = aav.patientunitstayid
+LEFT JOIN apachepredvar apv
+  ON pt.patientunitstayid = apv.patientunitstayid
+)
+, oasiscomp as
+(
+select pt.*
+  , case when preiculos is null then null
+       when preiculos < 0.17 then 5
+       when preiculos < 4.94 then 3
+       when preiculos < 24 then 0
+       when preiculos > 311.8  then 1
+       else 2 end as preiculos_score
+  ,  case when age is null then null
+        when age < 24 then 0
+        when age <= 53 then 3
+        when age <= 77 then 6
+        when age <= 89 then 9
+        when age >= 90 then 7
+        else 0 end as age_score
+  ,  case when gcs is null then null
+        when gcs <= 7 then 10
+        when gcs < 14 then 4
+        when gcs = 14 then 3
+        else 0 end as gcs_score
+  ,  case when heartrate is null then null
+        when heartrate > 125 then 6
+        when heartrate < 33 then 4
+        when heartrate >= 107 and heartrate <= 125 then 3
+        when heartrate >= 89 and heartrate <= 106 then 1
+        else 0 end as heartrate_score
+  ,  case when meanbp is null then null
+        when meanbp < 20.65 then 4
+        when meanbp < 51 then 3
+        when meanbp > 143.44 then 3
+        when meanbp >= 51 and meanbp < 61.33 then 2
+        else 0 end as meanbp_score
+  ,  case when resprate is null then null
+        when resprate <   6 then 10
+        when resprate >  44 then  9
+        when resprate >  30 then  6
+        when resprate >  22 then  1
+        when resprate <  13 then 1 else 0
+        end as resprate_score
+  ,  case when tempc is null then null
+        when tempc > 39.88 then 6
+        when tempc >= 33.22 and tempc <= 35.93 then 4
+        when tempc >= 33.22 and tempc <= 35.93 then 4
+        when tempc < 33.22 then 3
+        when tempc > 35.93 and tempc <= 36.39 then 2
+        when tempc >= 36.89 and tempc <= 39.88 then 2
+        else 0 end as temp_score
+  ,  case when UrineOutput is null then null
+        when UrineOutput < 671.09 then 10
+        when UrineOutput > 6896.80 then 8
+        when UrineOutput >= 671.09
+         and UrineOutput <= 1426.99 then 5
+        when UrineOutput >= 1427.00
+         and UrineOutput <= 2544.14 then 1
+        else 0 end as UrineOutput_score
+  ,  case when mechvent is null then null
+        when mechvent = 1 then 9
+        else 0 end as mechvent_score
+  ,  case when electivesurgery is null then null
+        when electivesurgery = 1 then 0
+        else 6 end as electivesurgery_score
+from pt
+)
+select oc.*
+    -- impute 0 for missing values
+    , coalesce(age_score,0)
+    + coalesce(preiculos_score,0)
+    + coalesce(gcs_score,0)
+    + coalesce(heartrate_score,0)
+    + coalesce(meanbp_score,0)
+    + coalesce(resprate_score,0)
+    + coalesce(temp_score,0)
+    + coalesce(urineoutput_score,0)
+    + coalesce(mechvent_score,0)
+    + coalesce(electivesurgery_score,0)
+    AS oasis
+from oasiscomp oc;
+
+CREATE TABLE public.infusion as
+with vw0 as
+(
+  select
+    patientunitstayid
+    , infusionoffset
+    -- TODO: need dopamine rate
+    , max(case when drugname in
+              (
+                   'Dopamine'
+                 , 'Dopamine ()'
+                 , 'DOPamine MAX 800 mg Dextrose 5% 250 ml  Premix (mcg/kg/min)'
+                 , 'Dopamine (mcg/hr)'
+                 , 'Dopamine (mcg/kg/hr)'
+                 , 'dopamine (mcg/kg/min)'
+                 , 'Dopamine (mcg/kg/min)'
+                 , 'Dopamine (mcg/min)'
+                 , 'Dopamine (mg/hr)'
+                 , 'Dopamine (ml/hr)'
+                 , 'Dopamine (nanograms/kg/min)'
+                 , 'DOPamine STD 15 mg Dextrose 5% 250 ml  Premix (mcg/kg/min)'
+                 , 'DOPamine STD 400 mg Dextrose 5% 250 ml  Premix (mcg/kg/min)'
+                 , 'DOPamine STD 400 mg Dextrose 5% 500 ml  Premix (mcg/kg/min)'
+                 , 'Dopamine (Unknown)'
+              )
+              -- note: no rows found for inotropin
+                then 1
+              else null end
+            ) as dopamine
+
+    -- this like statement is pretty reliable - no false positives when I checked
+    -- also catches the brand name dobutrex
+    , max(case when lower(drugname) like '%dobu%' then 1 else null end) as dobutamine
+    , max(case
+              when drugname in
+              (
+                 'Norepinephrine'
+               , 'Norepinephrine ()'
+               , 'Norepinephrine MAX 32 mg Dextrose 5% 250 ml (mcg/min)'
+               , 'Norepinephrine MAX 32 mg Dextrose 5% 500 ml (mcg/min)'
+               , 'Norepinephrine (mcg/hr)'
+               , 'Norepinephrine (mcg/kg/hr)'
+               , 'Norepinephrine (mcg/kg/min)'
+               , 'Norepinephrine (mcg/min)'
+               , 'Norepinephrine (mg/hr)'
+               , 'Norepinephrine (mg/kg/min)'
+               , 'Norepinephrine (mg/min)'
+               , 'Norepinephrine (ml/hr)'
+               , 'Norepinephrine STD 32 mg Dextrose 5% 282 ml (mcg/min)'
+               , 'Norepinephrine STD 32 mg Dextrose 5% 500 ml (mcg/min)'
+               , 'Norepinephrine STD 4 mg Dextrose 5% 250 ml (mcg/min)'
+               , 'Norepinephrine STD 4 mg Dextrose 5% 500 ml (mcg/min)'
+               , 'Norepinephrine STD 8 mg Dextrose 5% 250 ml (mcg/min)'
+               , 'Norepinephrine STD 8 mg Dextrose 5% 500 ml (mcg/min)'
+               , 'Norepinephrine (units/min)'
+               , 'Norepinephrine (Unknown)'
+               , 'norepinephrine Volume (ml)'
+               , 'norepinephrine Volume (ml) (ml/hr)'
+               -- levophed
+              , 'Levophed (mcg/kg/min)'
+              , 'levophed  (mcg/min)'
+              , 'levophed (mcg/min)'
+              , 'Levophed (mcg/min)'
+              , 'Levophed (mg/hr)'
+              , 'levophed (ml/hr)'
+              , 'Levophed (ml/hr)'
+              , 'NSS with LEVO (ml/hr)'
+              , 'NSS w/ levo/vaso (ml/hr)'
+              )
+          then 1 else 0 end) as norepinephrine
+    , max(case
+          when drugname in
+          (
+             'Phenylephrine'
+           , 'Phenylephrine ()'
+           , 'Phenylephrine  MAX 100 mg Sodium Chloride 0.9% 250 ml (mcg/min)'
+           , 'Phenylephrine (mcg/hr)'
+           , 'Phenylephrine (mcg/kg/min)'
+           , 'Phenylephrine (mcg/kg/min) (mcg/kg/min)'
+           , 'Phenylephrine (mcg/min)'
+           , 'Phenylephrine (mcg/min) (mcg/min)'
+           , 'Phenylephrine (mg/hr)'
+           , 'Phenylephrine (mg/kg/min)'
+           , 'Phenylephrine (ml/hr)'
+           , 'Phenylephrine  STD 20 mg Sodium Chloride 0.9% 250 ml (mcg/min)'
+           , 'Phenylephrine  STD 20 mg Sodium Chloride 0.9% 500 ml (mcg/min)'
+           , 'Volume (ml) Phenylephrine'
+           , 'Volume (ml) Phenylephrine ()'
+           -- neosynephrine is a synonym
+           , 'neo-synephrine (mcg/min)'
+           , 'neosynephrine (mcg/min)'
+           , 'Neosynephrine (mcg/min)'
+           , 'Neo Synephrine (mcg/min)'
+           , 'Neo-Synephrine (mcg/min)'
+           , 'NeoSynephrine (mcg/min)'
+           , 'NEO-SYNEPHRINE (mcg/min)'
+           , 'Neosynephrine (ml/hr)'
+           , 'neosynsprine'
+           , 'neosynsprine (mcg/kg/hr)'
+          )
+        then 1 else 0 end) as phenylephrine
+    , max(case
+            when drugname in
+            (
+                 'EPI (mcg/min)'
+               , 'Epinepherine (mcg/min)'
+               , 'Epinephrine'
+               , 'Epinephrine ()'
+               , 'EPINEPHrine(Adrenalin)MAX 30 mg Sodium Chloride 0.9% 250 ml (mcg/min)'
+               , 'EPINEPHrine(Adrenalin)STD 4 mg Sodium Chloride 0.9% 250 ml (mcg/min)'
+               , 'EPINEPHrine(Adrenalin)STD 4 mg Sodium Chloride 0.9% 500 ml (mcg/min)'
+               , 'EPINEPHrine(Adrenalin)STD 7 mg Sodium Chloride 0.9% 250 ml (mcg/min)'
+               , 'Epinephrine (mcg/hr)'
+               , 'Epinephrine (mcg/kg/min)'
+               , 'Epinephrine (mcg/min)'
+               , 'Epinephrine (mg/hr)'
+               , 'Epinephrine (mg/kg/min)'
+               , 'Epinephrine (ml/hr)'
+            ) then 1 else 0 end)
+          as epinephrine
+    , max(case
+            when drugname in
+            (
+                'Vasopressin'
+              , 'Vasopressin ()'
+              , 'Vasopressin 20 Units Sodium Chloride 0.9% 100 ml (units/hr)'
+              , 'Vasopressin 20 Units Sodium Chloride 0.9% 250 ml (units/hr)'
+              , 'Vasopressin 40 Units Sodium Chloride 0.9% 100 ml (units/hr)'
+              , 'Vasopressin 40 Units Sodium Chloride 0.9% 100 ml (units/kg/hr)'
+              , 'Vasopressin 40 Units Sodium Chloride 0.9% 100 ml (units/min)'
+              , 'Vasopressin 40 Units Sodium Chloride 0.9% 100 ml (Unknown)'
+              , 'Vasopressin 40 Units Sodium Chloride 0.9% 200 ml (units/min)'
+              , 'Vasopressin (mcg/kg/min)'
+              , 'Vasopressin (mcg/min)'
+              , 'Vasopressin (mg/hr)'
+              , 'Vasopressin (mg/min)'
+              , 'vasopressin (ml/hr)'
+              , 'Vasopressin (ml/hr)'
+              , 'Vasopressin (units/hr)'
+              , 'Vasopressin (units/kg/min)'
+              , 'vasopressin (units/min)'
+              , 'Vasopressin (units/min)'
+              , 'VAsopressin (units/min)'
+              , 'Vasopressin (Unknown)'
+            ) then 1 else 0 end)
+          as vasopressin
+    , max(case when drugname in
+      (
+           'Milrinone'
+         , 'Milrinone ()'
+         , 'Milrinone (mcg/kg/hr)'
+         , 'Milrinone (mcg/kg/min)'
+         , 'Milrinone (ml/hr)'
+         , 'Milrinone (Primacor) 40 mg Dextrose 5% 200 ml (mcg/kg/min)'
+         , 'Milronone (mcg/kg/min)'
+         , 'primacore (mcg/kg/min)'
+      ) then 1 else 0 end)
+      as milrinone
+    , max(case when drugname in
+      (
+          'Hepain (ml/hr)'
+        , 'Heparin'
+        , 'Heparin ()'
+        , 'Heparin 25,000 Unit/D5w 250 ml (ml/hr)'
+        , 'Heparin 25000 Units Dextrose 5% 500 ml  Premix (units/hr)'
+        , 'Heparin 25000 Units Dextrose 5% 500 ml  Premix (units/kg/hr)'
+        , 'Heparin 25000 Units Dextrose 5% 950 ml  Premix (units/kg/hr)'
+        , 'HEPARIN #2 (units/hr)'
+        , 'Heparin 8000u/1L NS (ml/hr)'
+        , 'Heparin-EKOS (units/hr)'
+        , 'Heparin/Femoral Sheath   (units/hr)'
+        , 'Heparin (mcg/kg/hr)'
+        , 'Heparin (mcg/kg/min)'
+        , 'Heparin (ml/hr)'
+        , 'heparin (units/hr)'
+        , 'Heparin (units/hr)'
+        , 'HEPARIN (units/hr)'
+        , 'Heparin (units/kg/hr)'
+        , 'Heparin (Unknown)'
+        , 'Heparin via sheath (units/hr)'
+        , 'Left  Heparin (units/hr)'
+        , 'NSS carrier heparin (ml/hr)'
+        , 'S-Heparin (units/hr)'
+        , 'Volume (ml) Heparin-heparin 25,000 units in 0.45 % sodium chloride 500 mL infusion'
+        , 'Volume (ml) Heparin-heparin 25,000 units in 0.45 % sodium chloride 500 mL infusion (ml/hr)'
+        , 'Volume (ml) Heparin-heparin 25,000 units in dextrose 500 mL infusion'
+        , 'Volume (ml) Heparin-heparin 25,000 units in dextrose 500 mL infusion (ml/hr)'
+        , 'Volume (ml) Heparin-heparin infusion 2 units/mL in 0.9% sodium chloride (ARTERIAL LINE)'
+        , 'Volume (ml) Heparin-heparin infusion 2 units/mL in 0.9% sodium chloride (ARTERIAL LINE) (ml/hr)'
+      ) then 1 else 0 end)
+      as heparin
+  from infusiondrug
+  group by patientunitstayid, infusionoffset
+)
+select
+  patientunitstayid
+  , infusionoffset as chartoffset
+  , dopamine::SMALLINT as dopamine
+  , dobutamine::SMALLINT as dobutamine
+  , norepinephrine::SMALLINT as norepinephrine
+  , phenylephrine::SMALLINT as phenylephrine
+  , epinephrine::SMALLINT as epinephrine
+  , vasopressin::SMALLINT as vasopressin
+  , milrinone::SMALLINT as milrinone
+  , heparin::SMALLINT as heparin
+from vw0
+-- at least one of our drugs should be non-zero
+where dopamine = 1
+OR dobutamine = 1
+OR norepinephrine = 1
+OR phenylephrine = 1
+OR epinephrine = 1
+OR vasopressin = 1
+OR milrinone = 1
+OR heparin = 1
+order by patientunitstayid, infusionoffset;
